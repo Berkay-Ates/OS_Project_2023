@@ -38,7 +38,7 @@ int generate_unique_id();
 int logIn_signIn_user(void *args);
 void *handle_client(void *args);
 void *setAllUsers(USER* userHead);
-USER* mallocUser(char* id, char* name, char* surname);
+USER* mallocUser(char* id, char* name, char* surname,char* phone);
 void sendUserList(void* args);
 
 int main(int argc, char const *argv[]) {
@@ -216,7 +216,7 @@ void sendUserList(void* args){
     int client_socket = threadArgs->socket;
     FILES* tmp = threadArgs->filesHead;
     USER* userHead = threadArgs->userHead;
-    char buffer[90];
+    char buffer[256];
     
     while(userHead != NULL){
         send(client_socket, "/userStruct", strlen("/userStruct"), 0);
@@ -250,14 +250,14 @@ int logIn_signIn_user(void* args){
         exit(-1);
     }
 
-    if(strncmp(buffer,"/signUpUser",11) == 0){
+    if(strncmp(buffer,"/signUpUser",strlen("/signUpUser")) == 0){
         valread = recv(client_socket, user, sizeof(USER),0);
 
         if(valread == sizeof(USER)){
             printf("\nYour id is: %s\n",user->id);
             printf("Your name is: %s\n",user->name);
             printf("Your surname is: %s\n",user->surname);
-            printf("Your phone is:%s\n\n",user->phone);
+            printf("Your phone is:%s \n",user->phone);
             // useri dosyaya kaydedip sonrasinda return 1 
             
             fwrite(user,sizeof(USER),1,tmpFiles);
@@ -282,7 +282,7 @@ int logIn_signIn_user(void* args){
             return -1;
         }
 
-    }else if(strncmp(buffer,"/loginUser",10) == 0){
+    }else if(strncmp(buffer,"/loginUser",strlen("/loginUser")) == 0){
         valread = recv(client_socket, user, sizeof(USER),0);
         if(valread == sizeof(USER)){
 
@@ -298,6 +298,7 @@ int logIn_signIn_user(void* args){
                     strcpy(userHead->name,userTmp->name);
                     strcpy(userHead->id,userTmp->id);
                     strcpy(userHead->surname,userTmp->surname);
+                    strcpy(userHead->phone,userTmp->phone);
                     fclose(tmpFiles);
                     free(user);
                     free(userTmp);
@@ -331,7 +332,7 @@ void *setAllUsers(USER* userHead){
 
     while(fread(&userTmp,sizeof(USER),1,tmpFiles) == 1){
         if(strcmp(userTmp.id,userHead->id) != 0){
-            tmp->next = mallocUser(userTmp.id,userTmp.name,userTmp.surname);
+            tmp->next = mallocUser(userTmp.id,userTmp.name,userTmp.surname,userTmp.phone);
             tmp = tmp->next;
         }
     }
@@ -341,7 +342,7 @@ void *setAllUsers(USER* userHead){
 }
 
 
-USER* mallocUser(char* id, char* name, char* surname){
+USER* mallocUser(char* id, char* name, char* surname,char* phone){
     USER* tmp = (USER*) malloc(sizeof(USER));
     if(tmp==NULL){
         printf(" There was an error while allocating a user\n");
@@ -350,6 +351,7 @@ USER* mallocUser(char* id, char* name, char* surname){
     strcpy(tmp->id,id);
     strcpy(tmp->name,name);
     strcpy(tmp->surname,surname);
+    strcpy(tmp->phone,phone);
     tmp->next=NULL;
     
     return tmp; 

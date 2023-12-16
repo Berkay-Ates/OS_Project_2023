@@ -159,7 +159,7 @@ void* handle_server(void* args){
         }else if(strncmp(buffer,"/userStruct",strlen("/userStruct")) == 0){
             send(client_fd, "/ready", strlen("/ready"), 0);
             recv(client_fd, user, sizeof(USER),0);
-            printf(" Id: %s, Name: %s, Surname: %s\n",user->id,user->name,user->surname);
+            printf("\n Id: %s, Name: %s, Surname: %s , Phone: %s ",user->id,user->name,user->surname,user->phone);
 
         } 
 
