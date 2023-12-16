@@ -10,11 +10,11 @@
 #define PORT 8080
 
 typedef struct user{
+    char phone[30];
     char name[30];
     char surname[30];
     char id[11];
     struct user* next;
-
 }USER;
 
 struct ThreadData {
@@ -205,9 +205,13 @@ int logIn_signIn_user(int client_fd){
         printf("please enter your surname:");
         scanf("%s",user->surname);
 
+        printf("please enter your phone number:");
+        scanf("%s",user->phone);
+
         printf("\nYour id is: %s\n",user->id);
         printf("Your name is: %s\n",user->name);
-        printf("Your surname is: %s\n\n",user->surname);
+        printf("Your surname is: %s\n",user->surname);
+        printf("Your phone is: %s\n\n",user->phone);
 
         //* simdi user struct verisini karsiya yollayalim 
         send(client_fd, user, sizeof(USER), 0);

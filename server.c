@@ -9,7 +9,11 @@
 
 #define PORT 8080
 
+//* git token is below
+//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
+
 typedef struct user{
+    char phone[30];
     char name[30];
     char surname[30];
     char id[11];
@@ -248,11 +252,12 @@ int logIn_signIn_user(void* args){
 
     if(strncmp(buffer,"/signUpUser",11) == 0){
         valread = recv(client_socket, user, sizeof(USER),0);
-        if(valread == sizeof(USER)){
 
+        if(valread == sizeof(USER)){
             printf("\nYour id is: %s\n",user->id);
             printf("Your name is: %s\n",user->name);
-            printf("Your surname is: %s\n\n",user->surname);
+            printf("Your surname is: %s\n",user->surname);
+            printf("Your phone is:%s\n\n",user->phone);
             // useri dosyaya kaydedip sonrasinda return 1 
             
             fwrite(user,sizeof(USER),1,tmpFiles);
@@ -263,6 +268,7 @@ int logIn_signIn_user(void* args){
             strcpy(userHead->name,user->name);
             strcpy(userHead->id,user->id);
             strcpy(userHead->surname,user->surname);
+            strcpy(userHead->phone,user->phone);
 
             fclose(tmpFiles);
             free(user);
