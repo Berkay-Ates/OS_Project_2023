@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <pthread.h>  // Eklenen başlık dosyası
 #include <sys/time.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #define PORT 8080
 
@@ -18,28 +20,38 @@ typedef struct user{
     char surname[30];
     char id[11];
     struct user* next;
+    struct user* contacts;
 }USER;
 
-
-typedef struct files{
-    FILE* file;
-    char fileName[30];
-    struct files* next;
-}FILES;
-
+typedef struct active_users{
+    int client_socket;
+    char userName[30];
+    char userId[11];
+    struct active_users* next_active_user;
+}ACTIVEUSERS;
 
 typedef struct threadArgs{
-    FILES* filesHead ;
+    ACTIVEUSERS* active_users_head;
     USER* userHead ; 
     int socket;
+    char currentUserId[11];
 }THREADARGS;
 
 int generate_unique_id();
 int logIn_signIn_user(void *args);
 void *handle_client(void *args);
-void *setAllUsers(USER* userHead);
+void *setAllUsersFromFile(USER* userHead);
 USER* mallocUser(char* id, char* name, char* surname,char* phone);
 void sendUserList(void* args);
+int sendUserContacts(USER* head,char* id,void* args);
+
+void add_new_active_user(ACTIVEUSERS** active_users_head, int socket_id,USER* user);
+void delete_active_user(ACTIVEUSERS** activeUserHead,int client_socket);
+void printActiveUsers(ACTIVEUSERS* active_users_head);
+
+void addUserToClientContactList(USER* userHead,char* userId,char* contactId,void* args);
+void printAllUsers(USER* user);
+void freeAllUser(USER* head);
 
 int main(int argc, char const *argv[]) {
     int server_fd, new_socket;
@@ -48,24 +60,16 @@ int main(int argc, char const *argv[]) {
     socklen_t addrlen = sizeof(address);
 
     USER* userHead = (USER*) malloc(sizeof(USER)); 
-    FILES* filesHead = (FILES*) malloc(sizeof(FILES));
-    THREADARGS* threadArgs = (THREADARGS*) malloc(sizeof(THREADARGS));
-
-    threadArgs->filesHead = filesHead;
-    threadArgs->userHead = userHead;
+    strcpy(userHead->id,"0000000000");
+    strcpy(userHead->name,"USER HEAD COMMON WITH");
+    strcpy(userHead->surname,"ALL THE THREADS");
 
     userHead->next = NULL;
+    userHead->contacts = NULL;
 
-    FILE* apps = fopen("./apps/allUsers","a+"); 
-        
-    if (apps == NULL) {
-        perror("file error");
-        return 1; // İşlemi sonlandır
-    }
-
-    filesHead->file = apps;
-    strcpy(filesHead->fileName,"./app/allUsers");
-    filesHead->next = NULL;
+    ACTIVEUSERS* act_user_head = (ACTIVEUSERS*) malloc(sizeof(ACTIVEUSERS));
+    act_user_head->next_active_user = NULL;
+    strcpy(act_user_head->userId,"00000000000");
 
 
     // Soket dosya tanımlayıcısı oluştur
@@ -103,11 +107,13 @@ int main(int argc, char const *argv[]) {
             exit(EXIT_FAILURE);
         }
 
+        THREADARGS* threadArgs = (THREADARGS*) malloc(sizeof(THREADARGS));
+        threadArgs->userHead = userHead;
+        threadArgs->active_users_head = act_user_head;
+
         // Her bağlantı için bir thread oluştur
         pthread_t thread;
         threadArgs->socket = new_socket;
-        
-        printf("dosya  :%p\n",apps);
 
         if (pthread_create(&thread, NULL, handle_client, (void *)threadArgs) < 0) {
             perror("could not create thread on server side");
@@ -118,24 +124,91 @@ int main(int argc, char const *argv[]) {
         pthread_detach(thread);
     }
 
-    while(filesHead != NULL){
-        fclose(filesHead->file);
-        filesHead = filesHead->next;
-    }
-
     // Dinleme soketini kapat
     close(server_fd);
     return 0;
 }
 
+void printActiveUsers(ACTIVEUSERS* active_users_head){
+    ACTIVEUSERS* tmp = active_users_head;
+    printf("Here are the all of the active users\n");
+
+    while(tmp != NULL){
+        printf("socket: %d, User Name: %s, User Id: %s\n",tmp->client_socket,tmp->userName,tmp->userId);
+        tmp=tmp->next_active_user;
+    }
+}
+
+void delete_active_user(ACTIVEUSERS** active_users,int socket){
+    ACTIVEUSERS* tmp = *active_users;
+    ACTIVEUSERS* tmp2 = tmp;
+
+    while(tmp != NULL && tmp->client_socket != socket){
+        tmp2 = tmp;
+        tmp = tmp->next_active_user;
+    }
+
+    if(tmp==NULL) // silinmek istenen eleman tabloda bulunmuyor
+        return;
+
+    if(tmp == (*active_users)){
+        // head silinecek
+        (*active_users) = (*active_users)->next_active_user;
+        free(tmp);
+    }else{
+        tmp2->next_active_user=tmp->next_active_user;
+        free(tmp);
+    }
+
+}
+
+void freeAllUser(USER* head){
+    USER* tmp = head->next;
+    USER* tmp2 = tmp;
+    head->next=NULL;
+    while(tmp!=NULL){
+        tmp2 = tmp;
+        tmp = tmp->next;
+        free(tmp2);
+    }
+}
+
+void printAllUsers(USER* user){
+    USER* tmp = user;
+
+    printf("All of the users All following\n");
+    while(user != NULL){
+        printf("%s  %s  %s  %s  \n",user->id,user->name,user->surname,user->phone);
+        user=user->next;
+    }
+}
+
+void add_new_active_user(ACTIVEUSERS** active_users_head, int socket_id,USER* user){
+    ACTIVEUSERS* tmp = (ACTIVEUSERS*) malloc(sizeof(ACTIVEUSERS));
+    ACTIVEUSERS* tmp2 = *active_users_head;
+
+    if(tmp==NULL){
+        printf("There was error while allocating space for the new active user\n");
+        exit(-1);
+    }
+
+    tmp->client_socket = socket_id;
+    strcpy(tmp->userName,user->name);
+    strcpy(tmp->userId,user->id);
+
+    while(tmp2->next_active_user != NULL)
+        tmp2 = tmp2->next_active_user;
+
+    tmp2->next_active_user = tmp; // en iyi ihtimalle headin nextine yazarak headi muhafaza ediyoruz
+}
 
 
 void *handle_client(void *args){
 
     THREADARGS* threadArgs = (THREADARGS *)args;
     int client_socket = threadArgs->socket;
-    FILES* FileHead = threadArgs->filesHead;
     USER* userHead = threadArgs->userHead;
+    ACTIVEUSERS* actUserHead = threadArgs->active_users_head;
     
     ssize_t valread;
     char buffer[1024] = {0};
@@ -151,15 +224,17 @@ void *handle_client(void *args){
 
     send(client_socket, "/succeed", strlen("/succeed"), 0);
 
-    //* head de user var ve tum kullanicilar eklenmis vaziyette.
-    setAllUsers(threadArgs->userHead);
-    while(userHead != NULL){
-        printf("%s\n",userHead->id);
-        userHead = userHead->next;
-    }
-
+    freeAllUser(threadArgs->userHead);
+    setAllUsersFromFile(threadArgs->userHead);
+    // Dosyada tum elemanlar oldugu icin sign up olma ihtimaline karsi simdi tum kullanicilari silelim
+    // ve bastan dosyadan atayalim eski diziden kurtulmadan eklersek memory leak olur
 
     while (isExit) {
+
+        printAllUsers(userHead);
+
+        printActiveUsers(threadArgs->active_users_head);
+
         memset(buffer, 0, sizeof(buffer));
         // kullaniciyi login yada register yap
        
@@ -176,13 +251,23 @@ void *handle_client(void *args){
 
         } if(strncmp(buffer,"/listMyContacts",strlen("/listMyContacts")) == 0){
             printf("from server /listMyContacts\n");
+            sendUserContacts(threadArgs->userHead,threadArgs->currentUserId,args);
 
-        }else if(strncmp(buffer,"/addNewUser",strlen("/addNewUser")) == 0){
-            printf("from server /addNewUser\n");
-            printf("Buffer: %s\n\n", buffer);
+        }else if(strncmp(buffer,"/addContact",strlen("/addContact")) == 0){
+           sendUserList(args);
+           send(client_socket,"/string",strlen("/string"),0);
+           read(client_socket, buffer, strlen("/ready"));
+           strcpy(buffer,"Yukaridaki kullanicilardan contack listenize eklemek istediginizin id degerini giriniz:\n");
+           send(client_socket,buffer,1024-1,0);
+
+           //* simdi buffera kullanici isminin gelmesini bekliyoruz
+           read(client_socket,buffer,1023);
+           printf("gelen ID degeri:%s \n",buffer);
+           //* add user to client contact list
+           addUserToClientContactList(userHead,threadArgs->currentUserId,buffer,args);
         
-        }else if(strncmp(buffer,"/deleteUser",strlen("/deleteUser")) == 0){
-            printf("from server /deleteUser\n");
+        }else if(strncmp(buffer,"/deleteContact",strlen("/deleteContact")) == 0){
+            printf("from server /deleteContact\n");
             printf("Buffer: %s\n\n", buffer);
 
         }else if(strncmp(buffer,"/sendMessage",strlen("/sendMessage")) == 0){
@@ -194,27 +279,92 @@ void *handle_client(void *args){
             printf("Buffer: %s\n\n", buffer);
         
         }else if(strncmp(buffer,"/logOutUser",strlen("/logOutUser")) == 0){
+            delete_active_user(&(threadArgs->active_users_head),client_socket);
+            printActiveUsers((threadArgs->active_users_head));
             printf("from server /logOutUser\n");
             printf("Buffer: %s\n\n", buffer);
             isExit = 0;
-
         }   
-
-        //İstemciye "hello" mesajını gönder
-        //send(client_socket, "buffer", strlen(buffer), 0);
     }
-
     // Soketi kapat
     close(client_socket);
 
     pthread_exit(NULL);
 }
 
+
+void addUserToClientContactList(USER* userHead,char* userId,char* contactId,void* args){
+
+    THREADARGS* threadArgs = (THREADARGS *)args;
+    int client_socket = threadArgs->socket;
+
+    USER* user=userHead->next;
+    USER* userContact ;
+    USER* tmpContact;
+    char fileName[30];
+
+    while(strcmp(user->id,userId) !=0 && user != NULL){
+        user= user->next;
+    }
+
+    if(user == NULL){
+        printf("Client sent invalid ID so request Failed wich was belong to id= %s \n",userId);
+        return;
+    }
+
+    //* user bulundu
+
+    userContact = userHead->next;    
+
+    while(userContact != NULL && strcmp(userContact->id,contactId) != 0 ){
+        userContact = userContact->next;
+    }
+
+    if(userContact == NULL){
+        printf("Client sent invalid ID so request Failed wich was belong to id=%s client\n",userId);
+        return;
+    }
+
+    if(user->contacts == NULL)
+        user->contacts = mallocUser(userContact->id,userContact->name,userContact->surname,userContact->phone);
+    else{
+        tmpContact = user->contacts;
+        while(tmpContact->contacts != NULL)
+            tmpContact = tmpContact->contacts;
+
+        user = mallocUser(userContact->id,userContact->name,userContact->surname,userContact->phone);
+        tmpContact->contacts = user;
+
+        strcpy(fileName,"./");
+        strcat(fileName,user->name);
+        strcat(fileName,"_");
+        strcat(fileName,user->surname);
+        strcat(fileName,"/contacts");
+        printf("\n%s\n",fileName);
+
+        send(client_socket,"/string",strlen("/string"),0);
+        read(client_socket, "kullanici kaydedildi", strlen("kullanici kaydedildi"));
+        send(client_socket,"Error opening to file",sizeof("Error opening to file"),0);
+        
+        FILE* tmpFile = fopen(",/apps/fileName","a+");
+        if(tmpFile == NULL){
+           send(client_socket,"/string",strlen("/string"),0);
+           read(client_socket, fileName, 30);
+           send(client_socket,"Error opening to file",sizeof("Error opening to file"),0);}
+        if(ferror(tmpFile)){
+           send(client_socket,"/string",strlen("/string"),0);
+           read(client_socket, fileName, 30);
+           send(client_socket,"Error opening to file",sizeof("Error opening to file"),0);}
+        fclose(tmpFile);
+    }
+}
+
+
+
 void sendUserList(void* args){
 
     THREADARGS* threadArgs = (THREADARGS *)args;
     int client_socket = threadArgs->socket;
-    FILES* tmp = threadArgs->filesHead;
     USER* userHead = threadArgs->userHead;
     char buffer[256];
     
@@ -222,27 +372,26 @@ void sendUserList(void* args){
         send(client_socket, "/userStruct", strlen("/userStruct"), 0);
         read(client_socket, buffer, strlen("/ready"));
         send(client_socket, userHead, sizeof(USER), 0);
+        printf("kullanici yollandi\n");
         userHead = userHead->next;
     }
-
 }
 
 int logIn_signIn_user(void* args){
     
     THREADARGS* threadArgs = (THREADARGS *)args;
     int client_socket = threadArgs->socket;
-    FILES* fileHeadParam = threadArgs->filesHead;
     USER* userHead = threadArgs->userHead;
+    ACTIVEUSERS* activeUserHead = threadArgs->active_users_head;
 
     FILE* tmpFiles = fopen("./apps/allUsers","a+");
-    
 
     ssize_t valread;
     char buffer[1024] = {0};
     memset(buffer, 0, sizeof(buffer));
 
-    USER* user = (USER*) malloc(sizeof(USER));
     USER* userTmp = (USER*) malloc(sizeof(USER));
+    USER* userTmp2 = (USER*) malloc(sizeof(USER));
 
     valread = read(client_socket, buffer, 1024 - 1);
     if (valread <= 0) {
@@ -251,57 +400,64 @@ int logIn_signIn_user(void* args){
     }
 
     if(strncmp(buffer,"/signUpUser",strlen("/signUpUser")) == 0){
-        valread = recv(client_socket, user, sizeof(USER),0);
+        valread = recv(client_socket, userTmp, sizeof(USER),0);
 
         if(valread == sizeof(USER)){
-            printf("\nYour id is: %s\n",user->id);
-            printf("Your name is: %s\n",user->name);
-            printf("Your surname is: %s\n",user->surname);
-            printf("Your phone is:%s \n",user->phone);
+            printf("\nYour id is: %s\n",userTmp->id);
+            printf("Your name is: %s\n",userTmp->name);
+            printf("Your surname is: %s\n",userTmp->surname);
+            printf("Your phone is:%s \n",userTmp->phone);
             // useri dosyaya kaydedip sonrasinda return 1 
             
-            fwrite(user,sizeof(USER),1,tmpFiles);
+            fwrite(userTmp,sizeof(USER),1,tmpFiles);
 
             if (ferror(tmpFiles))
                 perror("Error writing to file");
 
-            strcpy(userHead->name,user->name);
-            strcpy(userHead->id,user->id);
-            strcpy(userHead->surname,user->surname);
-            strcpy(userHead->phone,user->phone);
+            
+            strcpy(buffer,userTmp->name);
+            strcat(buffer,"_");
+            strcat(buffer,userTmp->surname);
+
+            int result = mkdir(buffer,0777);
+
+            if (result == 0) {
+                printf("Dizin oluşturuldu: %s\n", buffer);
+            } else {
+                perror("Dizin oluşturma hatasi");
+            }
+
+            strcpy(threadArgs->currentUserId,userTmp->id);
+
+            add_new_active_user(&(threadArgs->active_users_head),client_socket,userTmp);
 
             fclose(tmpFiles);
-            free(user);
-            free(userTmp);
             return 1;
 
         }else{
             printf("There was error while taking user struct for sign up\n");
-            free(user);
             free(userTmp);
             return -1;
         }
 
     }else if(strncmp(buffer,"/loginUser",strlen("/loginUser")) == 0){
-        valread = recv(client_socket, user, sizeof(USER),0);
+        valread = recv(client_socket, userTmp, sizeof(USER),0);
         if(valread == sizeof(USER)){
 
-            printf("\nYour id is: %s\n",user->id);
-            printf("Your name is: %s\n",user->name);
-            printf("Your surname is: %s\n\n",user->surname);
+            printf("\nYour id is: %s\n",userTmp->id);
+            printf("Your name is: %s\n",userTmp->name);
+            printf("Your surname is: %s\n\n",userTmp->surname);
             // useri dosyaya kaydedip sonrasinda return 1 
 
-            while(fread(userTmp,sizeof(USER),1,tmpFiles) == 1){
-                if(strcmp(user->id,userTmp->id) == 0){
+            while(fread(userTmp2,sizeof(USER),1,tmpFiles) == 1){
+                if(strcmp(userTmp2->id,userTmp->id) == 0){
                     printf("%s have been successfully logged in.\n",userTmp->id);
 
-                    strcpy(userHead->name,userTmp->name);
-                    strcpy(userHead->id,userTmp->id);
-                    strcpy(userHead->surname,userTmp->surname);
-                    strcpy(userHead->phone,userTmp->phone);
+                    strcpy(threadArgs->currentUserId,userTmp->id);
                     fclose(tmpFiles);
-                    free(user);
-                    free(userTmp);
+
+                    add_new_active_user(&(threadArgs->active_users_head),client_socket,userTmp2);
+
                     return 1;
                 }
             }
@@ -309,23 +465,52 @@ int logIn_signIn_user(void* args){
             if (ferror(tmpFiles))
                 perror("Error writing to file");
             
-            printf("%s did not found in saved users operation failed\n",user->id);
+            printf("%s did not found in saved users operation failed\n",userTmp->id);
             printf("User claimed with %s access denied.",userTmp->id);
             fclose(tmpFiles);
-            free(user);
             free(userTmp);
             return -1;
 
         }else{
             printf("There was error while taking user struct for sign up\n");
-            free(user);
             free(userTmp);
             return -1;
         }
     }
 }
 
-void *setAllUsers(USER* userHead){
+int sendUserContacts(USER* head,char* id,void* args){
+    THREADARGS* threadArgs = (THREADARGS *)args;
+    int client_socket = threadArgs->socket;
+    char* buffer[256];
+
+    USER* userHead = head ->next;
+    USER* userContact;
+
+    while(userHead!=NULL && strcmp(userHead->id,id) != 0){
+        userHead=userHead->next;
+    }
+
+    if(userHead == NULL){
+        printf("The id was not exists in current users");
+        return  -1;
+    }
+
+    userContact = userHead->contacts;
+    printf("Here is the contact of the %s id preson",userHead->id);
+
+    while(userContact != NULL){
+        send(client_socket, "/userStruct", strlen("/userStruct"), 0);
+        read(client_socket, buffer, strlen("/ready"));
+        send(client_socket, userContact, sizeof(USER), 0);
+        printf("contact yollandi\n");
+        userContact = userContact->contacts;
+    }
+
+    return 0;
+}
+
+void *setAllUsersFromFile(USER* userHead){
     USER* tmp = userHead;
     USER userTmp;
     FILE* tmpFiles = fopen("./apps/allUsers","r");
@@ -333,6 +518,7 @@ void *setAllUsers(USER* userHead){
     while(fread(&userTmp,sizeof(USER),1,tmpFiles) == 1){
         if(strcmp(userTmp.id,userHead->id) != 0){
             tmp->next = mallocUser(userTmp.id,userTmp.name,userTmp.surname,userTmp.phone);
+            //TODO set users all friends exists in the folder
             tmp = tmp->next;
         }
     }
@@ -353,6 +539,7 @@ USER* mallocUser(char* id, char* name, char* surname,char* phone){
     strcpy(tmp->surname,surname);
     strcpy(tmp->phone,phone);
     tmp->next=NULL;
+    tmp->contacts=NULL;
     
     return tmp; 
 }

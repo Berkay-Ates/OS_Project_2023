@@ -15,6 +15,7 @@ typedef struct user{
     char surname[30];
     char id[11];
     struct user* next;
+    struct user* contacts;
 }USER;
 
 struct ThreadData {
@@ -63,6 +64,8 @@ int main(int argc, char const *argv[]) {
         return -1;
     }
 
+    pthread_detach(thread);
+
     if(logIn_signIn_user(client_fd) < 0){
         // Bağlantıyı kapat
         close(client_fd);
@@ -80,33 +83,30 @@ int main(int argc, char const *argv[]) {
         switch(selection){
             case 1: //List All users 
                 send(client_fd, "/listAllUsers", strlen("/listAllUsers"), 0);
-                printf("All Users are listed below:\n");
 
                 break;
             
             case 2: //List All users 
+                printf("All your Contacts are listed below:\n");
                 send(client_fd, "/listMyContacts", strlen("/listMyContacts"), 0);
-                printf("All your clients are listed below:\n");
 
                 break;
 
-            case 3: //add user 
-                send(client_fd, "/addNewUser", strlen("/addNewUser"), 0);
-                printf("Please select which user you want to add to your contacts List\n");
-                
+            case 3: //add client
+                send(client_fd, "/addContact", strlen("/addContact"), 0);
+                scanf("%s",buffer);
+                send(client_fd,buffer,1024-1,0);
                 break;
             
 
             case 4: //delete user 
-                send(client_fd, "/deleteUser", strlen("/deleteUser"), 0);
+                send(client_fd, "/deleteContact", strlen("/deleteContact"), 0);
                 printf("Please select which user you want to delete\n");
                 
                 break;
             
             case 5: //send messages
                 send(client_fd, "/sendMessage", strlen("/sendMessage"), 0);
-                printf("Please select which user and type your messages");
-                
                 break;
             
             case 6: //list contacts
@@ -128,7 +128,6 @@ int main(int argc, char const *argv[]) {
     }
 
     // Bağlantıyı kapat
-    pthread_cancel(thread);
     close(client_fd); 
 
     return 0;
@@ -144,28 +143,29 @@ void* handle_server(void* args){
     while (isExit) {
         // Serverdan gelen veriyi oku
         ssize_t valread = read(client_fd, buffer, sizeof(buffer) - 1);
+
         if (valread <= 0) {
-            perror("Error reading from server\n");
+            perror("EXITTING\n");
             isExit = 0;
         }
 
-        //* server tarafi once ne yollayacagini soyleyecek sonra da yollacacagi veriyi yollayacak 
-        //* yollayacagi veri bittikten sonra da bitirdigini bildiren bir bitti paketi yollayacak
-
-        if(strncmp(buffer,"/close",strlen("/close"))== 0){
+        if(strncmp(buffer,"/close",strlen("/close")) == 0){
             printf("Server has denied your id\n");
             isExit=-1;
 
         }else if(strncmp(buffer,"/userStruct",strlen("/userStruct")) == 0){
             send(client_fd, "/ready", strlen("/ready"), 0);
             recv(client_fd, user, sizeof(USER),0);
-            printf("\n Id: %s, Name: %s, Surname: %s , Phone: %s ",user->id,user->name,user->surname,user->phone);
+            printf(" Id: %s, Name: %s, Surname: %s , Phone: %s \n",user->id,user->name,user->surname,user->phone);
 
-        } 
+        }else if(strncmp(buffer,"/string",strlen("/string")) == 0){
+            send(client_fd, "/ready", strlen("/ready"), 0);
+            read(client_fd, buffer, sizeof(buffer) - 1);
+            printf("%s",buffer);
 
-        memset(buffer, 0, sizeof(buffer));
+        }
+        memset(buffer, 0, sizeof(buffer)); 
     }
-
     // Threadi sonlandır
     pthread_exit(NULL);
 }
@@ -174,6 +174,7 @@ int logIn_signIn_user(int client_fd){
     int selection;
     USER* user = (USER*) malloc(sizeof(USER));
     user->next = NULL;
+    user->contacts = NULL;
     int id ;
     char idChar[11];
 
@@ -238,8 +239,8 @@ void printMenu(){
     printf("Please type your selection:\n");
     printf("1-List All users\n");
     printf("2-List Contacts\n");
-    printf("3-Add User\n");
-    printf("4-Delete User\n");
+    printf("3-Add Contact\n");
+    printf("4-Delete Contact\n");
     printf("5-Send Message\n");
     printf("6-Check Messages\n");
     printf("7-exit\n");
