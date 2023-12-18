@@ -50,6 +50,7 @@ void *setAllUsersFromFile(char* fileName,USER* userHead);
 USER* mallocUser(char* id, char* name, char* surname,char* phone);
 void sendUserList(void* args);
 int sendUserContacts(USER* head,char* id,void* args);
+void sendActiveUsers(void* args);
 
 void add_new_active_user(ACTIVEUSERS** active_users_head, int socket_id,USER* user);
 void delete_active_user(ACTIVEUSERS** activeUserHead,int client_socket);
@@ -77,6 +78,8 @@ int main(int argc, char const *argv[]) {
     ACTIVEUSERS* act_user_head = (ACTIVEUSERS*) malloc(sizeof(ACTIVEUSERS));
     act_user_head->next_active_user = NULL;
     strcpy(act_user_head->userId,"00000000000");
+    strcpy(act_user_head->userName,"00000000000");
+
 
 
     // Soket dosya tanımlayıcısı oluştur
@@ -254,7 +257,7 @@ void *handle_client(void *args){
             printf("from server /listAllUsers\n");
             sendUserList(args);
 
-        } if(strncmp(buffer,"/listMyContacts",strlen("/listMyContacts")) == 0){
+        }else if(strncmp(buffer,"/listMyContacts",strlen("/listMyContacts")) == 0){
             printf("from server /listMyContacts\n");
             sendUserContacts(threadArgs->userHead,threadArgs->currentUserId,args);
 
@@ -310,7 +313,10 @@ void *handle_client(void *args){
             printf("from server /logOutUser\n");
             printf("Buffer: %s\n\n", buffer);
             isExit = 0;
-        }   
+        }else if(strncmp(buffer,"/listAllActiveUsers",strlen("/listAllActiveUsers")) == 0){
+            sendActiveUsers(args);
+            printf("from server /deleteContact\n");
+        } 
     }
     // Soketi kapat
     close(client_socket);
@@ -318,6 +324,25 @@ void *handle_client(void *args){
     pthread_exit(NULL);
 }
 
+
+void sendActiveUsers(void* args){
+
+    THREADARGS* threadArgs = (THREADARGS *)args;
+    int client_socket = threadArgs->socket;
+    USER* userHead = threadArgs->userHead;
+    ACTIVEUSERS* actUserHead = threadArgs->active_users_head;
+    char buffer[1024];
+
+    while(actUserHead != NULL){
+        printf("0000000000000000000000000000000000000000000000000000\n");
+        send(client_socket, "/activeUserStruct", strlen("/activeUserStruct"), 0);
+        read(client_socket, buffer, strlen("/ready"));
+        send(client_socket, actUserHead, sizeof(ACTIVEUSERS), 0);
+        printf("Active User yollandi\n");
+        actUserHead = actUserHead->next_active_user;
+    }
+
+}
 
 int deleteContact(USER* userHead,char* userId,char* delContactId,void* args){
     

@@ -22,6 +22,14 @@ struct ThreadData {
     int client_fd;
 };
 
+typedef struct active_users{
+    int client_socket;
+    char userName[30];
+    char userId[11];
+    struct active_users* next_active_user;
+}ACTIVEUSERS;
+
+
 void printMenu();
 int logIn_signIn_user(int client_fd);
 int generate_unique_id();
@@ -75,7 +83,7 @@ int main(int argc, char const *argv[]) {
 
     memset(buffer, 0, sizeof(buffer));   
 
-    while (selection != 7) {
+    while (selection != 8) {
         printMenu();
         //fgets(hello, sizeof(hello), stdin);
         scanf("%d",&selection);
@@ -103,10 +111,11 @@ int main(int argc, char const *argv[]) {
                 scanf("%s",buffer);
                 send(client_fd,buffer,1024-1,0);
                 break;
-                break;
             
             case 5: //send messages
                 send(client_fd, "/sendMessage", strlen("/sendMessage"), 0);
+                scanf("%s",buffer);
+                send(client_fd,buffer,1024-1,0);
                 break;
             
             case 6: //list contacts
@@ -115,7 +124,12 @@ int main(int argc, char const *argv[]) {
                
                 break;
             
-            case 7: //exit
+            case 7: //list All active Users
+                  send(client_fd, "/listAllActiveUsers", strlen("/listAllActiveUsers"), 0);
+                
+                break;
+
+             case 8: //exit
                   send(client_fd, "/logOutUser", strlen("/logOutUser"), 0);
                 
                 break;
@@ -139,10 +153,12 @@ void* handle_server(void* args){
     char buffer[1024] = {0};
     int isExit = 1;
     USER* user = (USER*)malloc(sizeof(USER));
+    ACTIVEUSERS* activeUser = (ACTIVEUSERS*) malloc(sizeof(ACTIVEUSERS));
 
     while (isExit) {
-        // Serverdan gelen veriyi oku
+
         ssize_t valread = read(client_fd, buffer, sizeof(buffer) - 1);
+        printf("BUFFER===================%s=====================\n",buffer);
 
         if (valread <= 0) {
             perror("EXITTING\n");
@@ -156,14 +172,20 @@ void* handle_server(void* args){
         }else if(strncmp(buffer,"/userStruct",strlen("/userStruct")) == 0){
             send(client_fd, "/ready", strlen("/ready"), 0);
             recv(client_fd, user, sizeof(USER),0);
-            printf(" Id: %s, Name: %s, Surname: %s , Phone: %s \n",user->id,user->name,user->surname,user->phone);
+            printf("Id: %s, Name: %s, Surname: %s , Phone: %s \n",user->id,user->name,user->surname,user->phone);
 
         }else if(strncmp(buffer,"/string",strlen("/string")) == 0){
             send(client_fd, "/ready", strlen("/ready"), 0);
             read(client_fd, buffer, sizeof(buffer) - 1);
             printf("%s",buffer);
 
+        }else if(strncmp(buffer,"/activeUserStruct",strlen("/activeUserStruct") == 0)){
+            printf("===================ACCTIVEEONEE=====================\n");
+            send(client_fd, "/ready", strlen("/ready"), 0);
+            recv(client_fd, activeUser, sizeof(ACTIVEUSERS),0);
+            printf("Socket: %d , Id: %s, Name: %s \n",activeUser->client_socket,activeUser->userId,activeUser->userName);
         }
+
         memset(buffer, 0, sizeof(buffer)); 
     }
     // Threadi sonlandır
@@ -243,7 +265,8 @@ void printMenu(){
     printf("4-Delete Contact\n");
     printf("5-Send Message\n");
     printf("6-Check Messages\n");
-    printf("7-exit\n");
+    printf("7-Check Active Users\n");
+    printf("8-exit\n");
     printf("selection:");
 
 }
