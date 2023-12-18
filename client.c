@@ -87,9 +87,8 @@ int main(int argc, char const *argv[]) {
                 break;
             
             case 2: //List All users 
-                printf("All your Contacts are listed below:\n");
                 send(client_fd, "/listMyContacts", strlen("/listMyContacts"), 0);
-
+                
                 break;
 
             case 3: //add client
@@ -101,8 +100,9 @@ int main(int argc, char const *argv[]) {
 
             case 4: //delete user 
                 send(client_fd, "/deleteContact", strlen("/deleteContact"), 0);
-                printf("Please select which user you want to delete\n");
-                
+                scanf("%s",buffer);
+                send(client_fd,buffer,1024-1,0);
+                break;
                 break;
             
             case 5: //send messages

@@ -37,10 +37,16 @@ typedef struct threadArgs{
     char currentUserId[11];
 }THREADARGS;
 
+typedef struct message{
+    char senderId[11];
+    char receiverId[11];
+    char message[128];
+}MESSAGE;
+
 int generate_unique_id();
 int logIn_signIn_user(void *args);
 void *handle_client(void *args);
-void *setAllUsersFromFile(USER* userHead);
+void *setAllUsersFromFile(char* fileName,USER* userHead);
 USER* mallocUser(char* id, char* name, char* surname,char* phone);
 void sendUserList(void* args);
 int sendUserContacts(USER* head,char* id,void* args);
@@ -50,6 +56,7 @@ void delete_active_user(ACTIVEUSERS** activeUserHead,int client_socket);
 void printActiveUsers(ACTIVEUSERS* active_users_head);
 
 void addUserToClientContactList(USER* userHead,char* userId,char* contactId,void* args);
+int deleteContact(USER* userHead,char* userId,char* delContactId,void* args);
 void printAllUsers(USER* user);
 void freeAllUser(USER* head);
 
@@ -222,10 +229,8 @@ void *handle_client(void *args){
         exit(-1);
     }
 
-    send(client_socket, "/succeed", strlen("/succeed"), 0);
-
     freeAllUser(threadArgs->userHead);
-    setAllUsersFromFile(threadArgs->userHead);
+    setAllUsersFromFile("./apps/allUsers",threadArgs->userHead);
     // Dosyada tum elemanlar oldugu icin sign up olma ihtimaline karsi simdi tum kullanicilari silelim
     // ve bastan dosyadan atayalim eski diziden kurtulmadan eklersek memory leak olur
 
@@ -255,24 +260,45 @@ void *handle_client(void *args){
 
         }else if(strncmp(buffer,"/addContact",strlen("/addContact")) == 0){
            sendUserList(args);
+
            send(client_socket,"/string",strlen("/string"),0);
            read(client_socket, buffer, strlen("/ready"));
-           strcpy(buffer,"Yukaridaki kullanicilardan contack listenize eklemek istediginizin id degerini giriniz:\n");
+           strcpy(buffer,"Yukaridaki contack listenize eklemek istediginizin id degerini giriniz:\n");
            send(client_socket,buffer,1024-1,0);
 
            //* simdi buffera kullanici isminin gelmesini bekliyoruz
            read(client_socket,buffer,1023);
            printf("gelen ID degeri:%s \n",buffer);
            //* add user to client contact list
-           addUserToClientContactList(userHead,threadArgs->currentUserId,buffer,args);
+           addUserToClientContactList(threadArgs->userHead,threadArgs->currentUserId,buffer,args);
+            printf("Contact EKLENDI ******************************************\n");
+
         
         }else if(strncmp(buffer,"/deleteContact",strlen("/deleteContact")) == 0){
             printf("from server /deleteContact\n");
-            printf("Buffer: %s\n\n", buffer);
+            sendUserContacts(threadArgs->userHead,threadArgs->currentUserId,args);
+             //* simdi buffera kullanici isminin gelmesini bekliyoruz
+            send(client_socket,"/string",strlen("/string"),0);
+            read(client_socket, buffer, strlen("/ready"));
+            strcpy(buffer,"Yukaridan silmek istediginizin id degerini giriniz:\n");
+            send(client_socket,buffer,1024-1,0);
+
+            read(client_socket,buffer,1023);
+            printf("Silinmesi icin gelen ID degeri:%s \n",buffer);
+            deleteContact(threadArgs->userHead, threadArgs->currentUserId,buffer,args);
+
 
         }else if(strncmp(buffer,"/sendMessage",strlen("/sendMessage")) == 0){
-            printf("from server /sendMessage\n");
-            printf("Buffer: %s\n\n", buffer);
+            printf("from server /deleteContact\n");
+            sendUserContacts(threadArgs->userHead,threadArgs->currentUserId,args);
+
+            send(client_socket,"/string",strlen("/string"),0);
+            read(client_socket, buffer, strlen("/ready"));
+            strcpy(buffer,"Contactlarinizdan mesaj atmak istediginizi secin:\n");
+            send(client_socket,buffer,1024-1,0);
+
+            read(client_socket,buffer,1023);
+            printf("Mesaj yazmak icin gelen ID degeri:%s \n",buffer);
 
         }else if(strncmp(buffer,"/checkMessages",strlen("/checkMessages")) == 0){
             printf("from server /checkMessages\n");
@@ -293,18 +319,91 @@ void *handle_client(void *args){
 }
 
 
+int deleteContact(USER* userHead,char* userId,char* delContactId,void* args){
+    
+    THREADARGS* threadArgs = (THREADARGS *)args;
+    int client_socket = threadArgs->socket;
+   
+    USER* user =  userHead->next; 
+    USER* userContact;
+    USER* userContact2;
+    USER* userContact3=NULL;
+
+    FILE* contactFile;
+    char fileName[30];
+
+    while(user!=NULL && strcmp(user->id,userId) != 0){
+        printf("roaming on the users \n");
+        user = user->next;
+    }
+
+    if(user == NULL){
+        printf("olmayan user icin contactlarindan biri silinmeye calisildi\n");
+        return -1;
+    }
+
+    printf("usering contactina ulasiliiyor===================\n");
+    userContact = user->contacts;
+
+
+
+     printf("usering contactina ulasildi===================\n");
+
+    while(userContact != NULL && strcmp(userContact->id,delContactId) != 0){
+        printf("roaming on the contacts------------------------- \n");
+        userContact2 = userContact;
+        userContact = userContact ->contacts;
+    }
+
+    if(userContact == NULL){
+        printf("olmayan bir contact user listesinden silinmeye calisildi\n");
+        return -1;
+    }
+
+    if(userContact == user->contacts){
+        //head siliniyor demektir.
+        user->contacts = user->contacts->contacts;
+    }else
+        userContact2->contacts = userContact->contacts;
+
+    userContact3 = user->contacts;
+
+    //* simdi user contactin contactlarini dosyaya tekrardan yazalim 
+    strcpy(fileName,"./");
+    strcat(fileName,user->name);
+    strcat(fileName,"_");
+    strcat(fileName,user->surname);
+    strcat(fileName,"/contacts");
+
+
+    contactFile = fopen(fileName,"w");
+    printf("dosya =========================== %p\n",contactFile);
+
+    while(userContact3!=NULL){
+        fwrite(userContact3,sizeof(USER),1,contactFile);
+        userContact3=userContact3->contacts;
+    }
+
+    fclose(contactFile);
+    free(userContact);
+}
+
+
+
 void addUserToClientContactList(USER* userHead,char* userId,char* contactId,void* args){
 
     THREADARGS* threadArgs = (THREADARGS *)args;
     int client_socket = threadArgs->socket;
 
-    USER* user=userHead->next;
+    USER* user = userHead->next;
     USER* userContact ;
     USER* tmpContact;
+    USER* tmp;
     char fileName[30];
+    FILE* tmpFile;
 
     while(strcmp(user->id,userId) !=0 && user != NULL){
-        user= user->next;
+        user = user->next;
     }
 
     if(user == NULL){
@@ -312,7 +411,7 @@ void addUserToClientContactList(USER* userHead,char* userId,char* contactId,void
         return;
     }
 
-    //* user bulundu
+    //* user bulundu => user da 
 
     userContact = userHead->next;    
 
@@ -325,38 +424,32 @@ void addUserToClientContactList(USER* userHead,char* userId,char* contactId,void
         return;
     }
 
-    if(user->contacts == NULL)
-        user->contacts = mallocUser(userContact->id,userContact->name,userContact->surname,userContact->phone);
-    else{
-        tmpContact = user->contacts;
-        while(tmpContact->contacts != NULL)
-            tmpContact = tmpContact->contacts;
+    //* eklenecek kontakt bulundu => userContact da 
 
-        user = mallocUser(userContact->id,userContact->name,userContact->surname,userContact->phone);
-        tmpContact->contacts = user;
-
-        strcpy(fileName,"./");
-        strcat(fileName,user->name);
-        strcat(fileName,"_");
-        strcat(fileName,user->surname);
-        strcat(fileName,"/contacts");
-        printf("\n%s\n",fileName);
-
-        send(client_socket,"/string",strlen("/string"),0);
-        read(client_socket, "kullanici kaydedildi", strlen("kullanici kaydedildi"));
-        send(client_socket,"Error opening to file",sizeof("Error opening to file"),0);
+    if(user->contacts == NULL){
+        tmp = mallocUser(userContact->id,userContact->name,userContact->surname,userContact->phone);
+        user->contacts = tmp;
         
-        FILE* tmpFile = fopen(",/apps/fileName","a+");
-        if(tmpFile == NULL){
-           send(client_socket,"/string",strlen("/string"),0);
-           read(client_socket, fileName, 30);
-           send(client_socket,"Error opening to file",sizeof("Error opening to file"),0);}
-        if(ferror(tmpFile)){
-           send(client_socket,"/string",strlen("/string"),0);
-           read(client_socket, fileName, 30);
-           send(client_socket,"Error opening to file",sizeof("Error opening to file"),0);}
-        fclose(tmpFile);
+    } else{
+        tmpContact = user->contacts;
+        while(tmpContact->contacts != NULL){
+            tmpContact = tmpContact->contacts;
+        }
+
+        tmp = mallocUser(userContact->id,userContact->name,userContact->surname,userContact->phone);
+        tmpContact->contacts = tmp;
+
     }
+
+    strcpy(fileName,"./");
+    strcat(fileName,user->name);
+    strcat(fileName,"_");
+    strcat(fileName,user->surname);
+    strcat(fileName,"/contacts");
+        
+    tmpFile = fopen(fileName,"a+");
+    fwrite(tmp,sizeof(USER),1,tmpFile);
+    fclose(tmpFile);
 }
 
 
@@ -510,17 +603,35 @@ int sendUserContacts(USER* head,char* id,void* args){
     return 0;
 }
 
-void *setAllUsersFromFile(USER* userHead){
+void *setAllUsersFromFile(char* fileName,USER* userHead){
     USER* tmp = userHead;
     USER userTmp;
-    FILE* tmpFiles = fopen("./apps/allUsers","r");
+    USER* contactTmp;
+    USER userBUFF;
+    char contactFile[30];
+    FILE* tmpFiles = fopen(fileName,"r");
+    FILE* contactFP;
 
     while(fread(&userTmp,sizeof(USER),1,tmpFiles) == 1){
-        if(strcmp(userTmp.id,userHead->id) != 0){
-            tmp->next = mallocUser(userTmp.id,userTmp.name,userTmp.surname,userTmp.phone);
-            //TODO set users all friends exists in the folder
-            tmp = tmp->next;
+        tmp->next = mallocUser(userTmp.id,userTmp.name,userTmp.surname,userTmp.phone);
+        tmp = tmp->next;
+        contactTmp = tmp;
+        //TODO set users all friends exists in the folder
+        strcpy(contactFile,"./");
+        strcat(contactFile,tmp->name);
+        strcat(contactFile,"_");
+        strcat(contactFile,tmp->surname);
+        strcat(contactFile,"/contacts");
+        contactFP = fopen(contactFile,"r");
+        printf("%s ******** %s ******%p***********\n",contactFile,tmp->name,contactFP);
+
+        while(contactFP != NULL && fread(&userBUFF,sizeof(USER),1,contactFP) == 1){
+            contactTmp->contacts = mallocUser(userBUFF.id,userBUFF.name,userBUFF.surname,userBUFF.phone);
+            printf("%s *************\n",tmp->name);
+            contactTmp=contactTmp->contacts;
         }
+        if(contactFP!=NULL)
+            fclose(contactFP);
     }
 
     fclose(tmpFiles);
