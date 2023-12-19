@@ -20,6 +20,7 @@ typedef struct user{
 
 struct ThreadData {
     int client_fd;
+    int messaging_now;
 };
 
 typedef struct active_users{
@@ -28,6 +29,15 @@ typedef struct active_users{
     char userId[11];
     struct active_users* next_active_user;
 }ACTIVEUSERS;
+
+typedef struct message{
+    char senderName[30];
+    char receiverName[30];
+    char senderId[11];
+    char receiverId[11];
+    char message[30];
+    int isRead;
+}MESSAGE;
 
 
 void printMenu();
@@ -64,6 +74,7 @@ int main(int argc, char const *argv[]) {
     
     // Thread için veri yapısını oluştur
     struct ThreadData thread_data;
+    thread_data.messaging_now = 0;
     thread_data.client_fd = client_fd;
 
     // Thread oluştur
@@ -116,8 +127,21 @@ int main(int argc, char const *argv[]) {
                 send(client_fd, "/sendMessage", strlen("/sendMessage"), 0);
                 scanf("%s",buffer);
                 send(client_fd,buffer,1024-1,0);
+                thread_data.messaging_now = 1; //* -> kullanicinin girdigi degerin contactslarinda var oldugunu varsayalim
+                printf("THERE is the previous messages\n");
+
+                while(thread_data.messaging_now == 1){
+                    printf("Please enter /exitMessage for exitting\n");
+                    scanf("%s",buffer);
+                    send(client_fd,buffer,1024-1,0);
+                    if(strncmp(buffer,"/exitMessage",strlen("/exitMessage")) == 0){
+                        thread_data.messaging_now = 0;
+                    }
+                    memset(buffer, 0, sizeof(buffer)); 
+                }
+
                 break;
-            
+
             case 6: //list contacts
                 send(client_fd, "/checkMessages", strlen("/checkMessages"), 0);
                 printf("All the users is listed below\n");
@@ -125,25 +149,26 @@ int main(int argc, char const *argv[]) {
                 break;
             
             case 7: //list All active Users
-                  send(client_fd, "/listAllActiveUsers", strlen("/listAllActiveUsers"), 0);
-                
+                printf("Here are the all of the active users:\n");
+                send(client_fd, "/listAllActiveUsers", strlen("/listAllActiveUsers"), 0);
+
                 break;
 
              case 8: //exit
+
                   send(client_fd, "/logOutUser", strlen("/logOutUser"), 0);
                 
                 break;
 
             defeult:
                 printf("There is an error with your choice");
-                
                 break;
         }
     }
 
-    // Bağlantıyı kapat
+    // Bağlantıyı kapatildi
     close(client_fd); 
-
+    
     return 0;
 }
 
@@ -154,12 +179,11 @@ void* handle_server(void* args){
     int isExit = 1;
     USER* user = (USER*)malloc(sizeof(USER));
     ACTIVEUSERS* activeUser = (ACTIVEUSERS*) malloc(sizeof(ACTIVEUSERS));
+    MESSAGE* message = (MESSAGE*) malloc(sizeof(MESSAGE));
 
     while (isExit) {
 
         ssize_t valread = read(client_fd, buffer, sizeof(buffer) - 1);
-        printf("BUFFER===================%s=====================\n",buffer);
-
         if (valread <= 0) {
             perror("EXITTING\n");
             isExit = 0;
@@ -179,11 +203,28 @@ void* handle_server(void* args){
             read(client_fd, buffer, sizeof(buffer) - 1);
             printf("%s",buffer);
 
-        }else if(strncmp(buffer,"/activeUserStruct",strlen("/activeUserStruct") == 0)){
-            printf("===================ACCTIVEEONEE=====================\n");
+        }else if(strncmp(buffer,"/activeUserStruct",strlen("/activeUserStruct")) == 0){
             send(client_fd, "/ready", strlen("/ready"), 0);
             recv(client_fd, activeUser, sizeof(ACTIVEUSERS),0);
             printf("Socket: %d , Id: %s, Name: %s \n",activeUser->client_socket,activeUser->userId,activeUser->userName);
+
+        }else if(strncmp(buffer,"/userMessageStruct",strlen("/userMessageStruct")) == 0){
+           
+            send(client_fd,"/read",strlen("/ready"),0);
+            recv(client_fd,message,sizeof(MESSAGE),0);
+            printf("%s: %s\n",message->senderName,message->message);
+
+        }else if(strncmp(buffer,"/setMessaging",strlen("/setMessaging")) == 0){
+
+            send(client_fd, "/ready", strlen("/ready"), 0);
+            read(client_fd, buffer, sizeof(buffer) - 1);
+
+            if(strncmp(buffer,"/exitMessaging",strlen("/exitMessaging")) == 0){
+                thread_data->messaging_now = 0;
+
+            }else if(strncmp(buffer,"/startMessaging",strlen("/startMessaging")) == 0){
+                thread_data->messaging_now = 1;
+            }                                
         }
 
         memset(buffer, 0, sizeof(buffer)); 
