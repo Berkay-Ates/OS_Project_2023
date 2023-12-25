@@ -21,6 +21,8 @@ typedef struct user{
 struct ThreadData {
     int client_fd;
     int messaging_now;
+    char currentlyMessaging[11];
+    char userId[11];
 };
 
 typedef struct active_users{
@@ -36,12 +38,13 @@ typedef struct message{
     char senderId[11];
     char receiverId[11];
     char message[30];
-    int isRead;
+    int isRead;;
+    char messageId[11];
 }MESSAGE;
 
 
 void printMenu();
-int logIn_signIn_user(int client_fd);
+int logIn_signIn_user(int client_fd,void* args);
 int generate_unique_id();
 void* handle_server(void *args);
 
@@ -85,7 +88,7 @@ int main(int argc, char const *argv[]) {
 
     pthread_detach(thread);
 
-    if(logIn_signIn_user(client_fd) < 0){
+    if(logIn_signIn_user(client_fd,(void* )&thread_data) < 0){
         // Bağlantıyı kapat
         close(client_fd);
         pthread_cancel(thread);
@@ -127,6 +130,7 @@ int main(int argc, char const *argv[]) {
                 send(client_fd, "/sendMessage", strlen("/sendMessage"), 0);
                 scanf("%s",buffer);
                 send(client_fd,buffer,1024-1,0);
+                strncpy(thread_data.currentlyMessaging,buffer,11);
                 thread_data.messaging_now = 1; //* -> kullanicinin girdigi degerin contactslarinda var oldugunu varsayalim
                 printf("THERE is the previous messages\n");
 
@@ -136,6 +140,7 @@ int main(int argc, char const *argv[]) {
                     send(client_fd,buffer,1024-1,0);
                     if(strncmp(buffer,"/exitMessage",strlen("/exitMessage")) == 0){
                         thread_data.messaging_now = 0;
+                        memset(thread_data.currentlyMessaging, 0, 11); 
                     }
                     memset(buffer, 0, sizeof(buffer)); 
                 }
@@ -212,7 +217,11 @@ void* handle_server(void* args){
            
             send(client_fd,"/read",strlen("/ready"),0);
             recv(client_fd,message,sizeof(MESSAGE),0);
-            printf("%s: %s\n",message->senderName,message->message);
+            if(strncmp(message->senderId,thread_data->currentlyMessaging,11) == 0 || strncmp(message->senderId,thread_data->userId,11) == 0){
+                printf("%s: %s, %d (1=read,0=not_read) \n",message->senderName,message->message,message->isRead);
+            }else{
+                printf("You have new message from %s \n",message->senderName);
+            }
 
         }else if(strncmp(buffer,"/setMessaging",strlen("/setMessaging")) == 0){
 
@@ -233,7 +242,8 @@ void* handle_server(void* args){
     pthread_exit(NULL);
 }
 
-int logIn_signIn_user(int client_fd){
+int logIn_signIn_user(int client_fd,void* args){
+    struct ThreadData *thread_data = (struct ThreadData *)args;
     int selection;
     USER* user = (USER*) malloc(sizeof(USER));
     user->next = NULL;
@@ -254,7 +264,9 @@ int logIn_signIn_user(int client_fd){
         printf("10 haneli id degerinizi giriniz:");
         scanf("%s",user->id);
         
+        strncpy(thread_data->userId,user->id,11);
         send(client_fd, user, sizeof(USER), 0);
+        
 
     }else if(selection == 2){
         //* signUp user
@@ -278,6 +290,7 @@ int logIn_signIn_user(int client_fd){
         printf("Your phone is: %s\n\n",user->phone);
 
         //* simdi user struct verisini karsiya yollayalim 
+        strncpy(thread_data->userId,user->id,11);
         send(client_fd, user, sizeof(USER), 0);
 
     }else{

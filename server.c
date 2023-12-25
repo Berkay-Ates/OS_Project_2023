@@ -45,6 +45,7 @@ typedef struct message{
     char senderId[11];
     char receiverId[11];
     char message[30];
+    char messageId[11];
     int isRead;
 }MESSAGE;
 
@@ -53,7 +54,7 @@ int logIn_signIn_user(void *args);
 void *handle_client(void *args);
 void *setAllUsersFromFile(char* fileName,USER* userHead);
 USER* mallocUser(char* id, char* name, char* surname,char* phone);
-void sendUserList(void* args);
+void sendUserList(void* args,int sendUser);
 int sendUserContacts(USER* head,char* id,void* args);
 void sendActiveUsers(void* args);
 void sendPreviousMessages(void* args,USER* user,USER* messaging);
@@ -265,14 +266,14 @@ void *handle_client(void *args){
         
         if(strncmp(buffer,"/listAllUsers",strlen("/listAllUsers")) == 0){
             printf("from server /listAllUsers\n");
-            sendUserList(args);
+            sendUserList(args,1);
 
         }else if(strncmp(buffer,"/listMyContacts",strlen("/listMyContacts")) == 0){
             printf("from server /listMyContacts\n");
             sendUserContacts(threadArgs->userHead,threadArgs->currentUserId,args);
 
         }else if(strncmp(buffer,"/addContact",strlen("/addContact")) == 0){
-           sendUserList(args);
+           sendUserList(args,0);
 
            send(client_socket,"/string",strlen("/string"),0);
            read(client_socket, buffer, strlen("/ready"));
@@ -360,6 +361,8 @@ void handleMessage(void* args){
 
     int isMessaging = 1;
 
+    int id = 0;
+
     printf("senderID: %s, receiverId:%s , client_socket: %d, receiver_socket:%d \n",myUserId,messagingTo,client_socket,messaging_socket);
 
 
@@ -412,6 +415,7 @@ void handleMessage(void* args){
         }
 
         if(isMessaging!=0){
+            
             strcpy(message->message,buffer);
             strcpy(message->senderId,myUserId);
             strcpy(message->receiverId,messagingTo);
@@ -432,8 +436,9 @@ void handleMessage(void* args){
             printf("sender: %s, senderID: %s, receiver:%s, receiverId:%s , client_socket: %d, receiver_socket:%d \n",userHead2->name,userHead2->id,userHead3->name,userHead3->id,client_socket,messaging_socket);
 
 
-            if(messaging_socket == 0)
-                message->isRead = 0;
+            if(messaging_socket != 0){
+                message->isRead = 1;
+            }
 
             printf("MESAJ KAYDEDILIYOR\n");
             saveMessagesToFile(args,userHead2,userHead3,message);
@@ -732,18 +737,27 @@ void addUserToClientContactList(USER* userHead,char* userId,char* contactId,void
 
 
 
-void sendUserList(void* args){
+void sendUserList(void* args,int sendUser){
 
     THREADARGS* threadArgs = (THREADARGS *)args;
+    ACTIVEUSERS* actUserHead = threadArgs->active_users_head;
+    int messaging_socket = threadArgs->messaging_socket;
+
+    char* messagingTo = threadArgs->meessaging_id;
+    char* myUserId = threadArgs->currentUserId;
+
+    char buffer[1024];
+
     int client_socket = threadArgs->socket;
     USER* userHead = threadArgs->userHead;
-    char buffer[256];
     
     while(userHead != NULL){
-        send(client_socket, "/userStruct", strlen("/userStruct"), 0);
-        read(client_socket, buffer, strlen("/ready"));
-        send(client_socket, userHead, sizeof(USER), 0);
-        printf("kullanici yollandi\n");
+        if(strncmp(myUserId,userHead->id,11) != 0 || sendUser != 0){
+            send(client_socket, "/userStruct", strlen("/userStruct"), 0);
+            read(client_socket, buffer, strlen("/ready"));
+            send(client_socket, userHead, sizeof(USER), 0);
+            printf("kullanici yollandi\n");
+        }
         userHead = userHead->next;
     }
 }
@@ -914,6 +928,13 @@ void *setAllUsersFromFile(char* fileName,USER* userHead){
 
     fclose(tmpFiles);
 
+}
+
+
+int generate_unique_id() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (int)tv.tv_sec;
 }
 
 
