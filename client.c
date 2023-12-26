@@ -38,8 +38,8 @@ typedef struct message{
     char senderId[11];
     char receiverId[11];
     char message[30];
-    int isRead;;
     char messageId[11];
+    char isRead;
 }MESSAGE;
 
 
@@ -97,7 +97,7 @@ int main(int argc, char const *argv[]) {
 
     memset(buffer, 0, sizeof(buffer));   
 
-    while (selection != 8) {
+    while (selection != 7) {
         printMenu();
         //fgets(hello, sizeof(hello), stdin);
         scanf("%d",&selection);
@@ -135,32 +135,31 @@ int main(int argc, char const *argv[]) {
                 printf("THERE is the previous messages\n");
 
                 while(thread_data.messaging_now == 1){
-                    printf("Please enter /exitMessage for exitting\n");
+                    printf("Please enter /exitMessage for exitting,/deleteMessage for deleting \n");
                     scanf("%s",buffer);
-                    send(client_fd,buffer,1024-1,0);
-                    if(strncmp(buffer,"/exitMessage",strlen("/exitMessage")) == 0){
-                        thread_data.messaging_now = 0;
-                        memset(thread_data.currentlyMessaging, 0, 11); 
+                    if(strncmp(buffer,"/deleteMessage",strlen("/deleteMessage")) == 0 ){
+                        send(client_fd,buffer,1024-1,0);
+                        printf("silmek istediginiz mesajin texti: ");
+                        scanf("%s",buffer);
+                        send(client_fd,buffer,1024-1,0);
+                    }else{
+                        send(client_fd,buffer,1024-1,0);
+                        if(strncmp(buffer,"/exitMessage",strlen("/exitMessage")) == 0){
+                            thread_data.messaging_now = 0;
+                            memset(thread_data.currentlyMessaging, 0, 11); 
+                        }
                     }
                     memset(buffer, 0, sizeof(buffer)); 
                 }
-
-                break;
-
-            case 6: //list contacts
-                send(client_fd, "/checkMessages", strlen("/checkMessages"), 0);
-                printf("All the users is listed below\n");
-               
                 break;
             
-            case 7: //list All active Users
+            case 6: //list All active Users
                 printf("Here are the all of the active users:\n");
                 send(client_fd, "/listAllActiveUsers", strlen("/listAllActiveUsers"), 0);
 
                 break;
 
-             case 8: //exit
-
+             case 7: //exit
                   send(client_fd, "/logOutUser", strlen("/logOutUser"), 0);
                 
                 break;
@@ -218,7 +217,10 @@ void* handle_server(void* args){
             send(client_fd,"/read",strlen("/ready"),0);
             recv(client_fd,message,sizeof(MESSAGE),0);
             if(strncmp(message->senderId,thread_data->currentlyMessaging,11) == 0 || strncmp(message->senderId,thread_data->userId,11) == 0){
-                printf("%s: %s, %d (1=read,0=not_read) \n",message->senderName,message->message,message->isRead);
+                if(strncmp(message->receiverId,thread_data->currentlyMessaging,11) == 0)
+                    printf("SIZ: %s, OKUNDU: %c  \n", message->message,message->isRead);
+                else
+                    printf("%s: %s, OKUNDU: %c  \n", message->senderName,message->message,message->isRead);
             }else{
                 printf("You have new message from %s \n",message->senderName);
             }
@@ -318,9 +320,8 @@ void printMenu(){
     printf("3-Add Contact\n");
     printf("4-Delete Contact\n");
     printf("5-Send Message\n");
-    printf("6-Check Messages\n");
-    printf("7-Check Active Users\n");
-    printf("8-exit\n");
+    printf("6-Check Active Users\n");
+    printf("7-exit\n");
     printf("selection:");
 
 }

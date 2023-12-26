@@ -46,10 +46,9 @@ typedef struct message{
     char receiverId[11];
     char message[30];
     char messageId[11];
-    int isRead;
+    char isRead;
 }MESSAGE;
 
-int generate_unique_id();
 int logIn_signIn_user(void *args);
 void *handle_client(void *args);
 void *setAllUsersFromFile(char* fileName,USER* userHead);
@@ -59,6 +58,8 @@ int sendUserContacts(USER* head,char* id,void* args);
 void sendActiveUsers(void* args);
 void sendPreviousMessages(void* args,USER* user,USER* messaging);
 void saveMessagesToFile(void* args,USER* user,USER* messaging,MESSAGE* message);
+void deleteMessage(void* args,USER* user, USER* messagingTo,char * message);
+void setAllMessageReaded(void* args,USER* user, USER* messaging);
 
 void add_new_active_user(ACTIVEUSERS** active_users_head, int socket_id,USER* user);
 void delete_active_user(ACTIVEUSERS** activeUserHead,int client_socket);
@@ -143,6 +144,9 @@ int main(int argc, char const *argv[]) {
         pthread_detach(thread);
     }
 
+    free(act_user_head);
+    free(userHead);
+
     // Dinleme soketini kapat
     close(server_fd);
     return 0;
@@ -175,9 +179,11 @@ void delete_active_user(ACTIVEUSERS** active_users,int socket){
     if(tmp == (*active_users)){
         // head silinecek
         (*active_users) = (*active_users)->next_active_user;
+        tmp->next_active_user=NULL;
         free(tmp);
     }else{
         tmp2->next_active_user=tmp->next_active_user;
+        tmp->next_active_user=NULL;
         free(tmp);
     }
 
@@ -214,6 +220,7 @@ void add_new_active_user(ACTIVEUSERS** active_users_head, int socket_id,USER* us
     }
 
     tmp->client_socket = socket_id;
+    tmp->next_active_user = NULL;
     strcpy(tmp->userName,user->name);
     strcpy(tmp->userId,user->id);
 
@@ -316,10 +323,6 @@ void *handle_client(void *args){
             strncpy(threadArgs->meessaging_id,buffer,11);
             handleMessage(args);
 
-        }else if(strncmp(buffer,"/checkMessages",strlen("/checkMessages")) == 0){
-            printf("from server /checkMessages\n");
-            printf("Buffer: %s\n\n", buffer);
-        
         }else if(strncmp(buffer,"/logOutUser",strlen("/logOutUser")) == 0){
             delete_active_user(&(threadArgs->active_users_head),client_socket);
             printActiveUsers((threadArgs->active_users_head));
@@ -344,7 +347,7 @@ void handleMessage(void* args){
     ACTIVEUSERS* actUserHead = threadArgs->active_users_head;
     
     int client_socket = threadArgs->socket;
-    int messaging_socket = threadArgs->messaging_socket;
+    int messaging_socket = 0;
 
     char* messagingTo = threadArgs->meessaging_id;
     char* myUserId = threadArgs->currentUserId;
@@ -400,28 +403,34 @@ void handleMessage(void* args){
 
     printf("sender: %s, senderID: %s, receiver:%s, receiverId:%s , client_socket: %d, receiver_socket:%d \n",userHead2->name,userHead2->id,userHead3->name,userHead3->id,client_socket,messaging_socket);
 
+    setAllMessageReaded(args,userHead2,userHead3);
     sendPreviousMessages(args,userHead2,userHead3);
+    
 
     while(isMessaging){
+        free(message);
+        message = (MESSAGE*) malloc(sizeof(MESSAGE));
+        memset(buffer, 0, sizeof(buffer)); 
         read(client_socket,buffer,1023);
-        printf("========================KULLANICI MESAJLASMADAN CIKIS YAPMAK ISTEDI=======================\n");
+       
         if(strncmp(buffer,"/exitMessage",strlen("/exitMessage")) == 0){
             send(client_socket,"/setMessaging",strlen("/setMessaging"),0);
             read(client_socket, buffer, strlen("/ready"));
             strcpy(buffer,"/exitMessaging");
             send(client_socket,buffer,1023,0);
             isMessaging = 0;
+            printf("========================KULLANICI MESAJLASMADAN CIKIS YAPMAK ISTEDI=======================\n");
             return;
         }
 
-        if(isMessaging!=0){
+        if(isMessaging!=0 && strncmp(buffer,"/deleteMessage",strlen("/deleteMessage")) != 0 ){
             
             strcpy(message->message,buffer);
             strcpy(message->senderId,myUserId);
             strcpy(message->receiverId,messagingTo);
             strcpy(message->senderName,userHead2->name);
             strcpy(message->receiverName,userHead3->name);
-            message->isRead = 0;
+            message->isRead = '0';
 
             // mesaj yollanan kisi aktif ise mesaji okundu olarak isaretle, mesaj yollanan kisi aktif degilse mesaji okunmadi olarak isaretle
             actUserHead3 = actUserHead;;
@@ -432,12 +441,15 @@ void handleMessage(void* args){
             // yollanan kullanici varsa onun da socketini baglayalim 
             if(actUserHead3!=NULL)
                 messaging_socket = actUserHead3->client_socket;
+            else
+                messaging_socket = 0;
 
             printf("sender: %s, senderID: %s, receiver:%s, receiverId:%s , client_socket: %d, receiver_socket:%d \n",userHead2->name,userHead2->id,userHead3->name,userHead3->id,client_socket,messaging_socket);
 
 
             if(messaging_socket != 0){
-                message->isRead = 1;
+                printf("MESAJ OKUNDU ____________________________________\n");
+                message->isRead = '1';
             }
 
             printf("MESAJ KAYDEDILIYOR\n");
@@ -457,11 +469,215 @@ void handleMessage(void* args){
                 printf("mesaj yollandi\n");
             }
 
+        }else if(isMessaging!=0 && strncmp(buffer,"/deleteMessage",strlen("/deleteMessage")) == 0){
+            printf("kullanici mesaj silmek istedi\n");
+            read(client_socket,buffer,1023); //* silinmek istenen mesajin texti bufferda 
+            deleteMessage(args,userHead2, userHead3,buffer);
         }
+    }
+}
+
+void setAllMessageReaded(void* args,USER* user, USER* messaging){
+    THREADARGS* threadArgs = (THREADARGS *)args;
     
+    USER* userHead = threadArgs->userHead;
+    ACTIVEUSERS* actUserHead = threadArgs->active_users_head;
+    
+    int client_socket = threadArgs->socket;
+    int messaging_socket = 0;
+
+    char* messagingTo = threadArgs->meessaging_id;
+    char* myUserId = threadArgs->currentUserId;
+
+    char buffer[1024];
+
+    USER* userHead2 = userHead;
+    USER* userHead3;
+
+    ACTIVEUSERS* actUserHead2 = actUserHead;
+    ACTIVEUSERS* actUserHead3 = actUserHead;
+
+    MESSAGE* messageTmp = (MESSAGE*) malloc(sizeof(MESSAGE));
+    MESSAGE** messages = (MESSAGE**) malloc(sizeof(MESSAGE*)*1000);
+    int i =0;
+    int j =0;
+
+    FILE* tmpFile;
+
+    strcpy(buffer,"./");
+    strcat(buffer,user->name);
+    strcat(buffer,"_");
+    strcat(buffer,user->surname);
+    strcat(buffer,"/");
+    strcat(buffer,messaging->name);
+    strcat(buffer,"_");
+    strcat(buffer,messaging->surname);
+
+    printf("MESAJ SILMEK ICIN ACILAN DOSYA ISMI: %s \n",buffer);
+    tmpFile = fopen(buffer,"r");
+
+    if(tmpFile == NULL){
+        printf("!!!!!!!!!!!!!Kullanicinin silmek istedigi mesajlar icin dosyayi okumak icin acma isleminde sorun yasandi \n");
+        return;
+    }
+    while(fread(messageTmp,sizeof(MESSAGE),1,tmpFile) == 1){
+            printf("--------------------------------------------\n");
+            if(strcmp(messageTmp->receiverId,myUserId) == 0 ){
+                messageTmp->isRead = '1';
+            }
+            messages[i] = messageTmp;
+            messageTmp = (MESSAGE*) malloc(sizeof(MESSAGE));
+            i++;
+    }
+    
+    fclose(tmpFile);
+    j=i;
+    i=0;
+
+    tmpFile = fopen(buffer,"w+");
+    printf("MESAJ SILMEK ICIN ACILAN DOSYA ISMI: %s \n",buffer);
+    if(tmpFile == NULL){
+        printf("!!!!!!!!!!!!!Kullanicinin silmek istedigi dosyayi W modunda acmak isterken sorun yasandi \n");
+        return;
     }
 
+    printf("!!!!!!!!!!!!!Silinen mesajlar haricindeki mesajlar tekrar dosyaya yaziliyor \n");
+    while(j>i){
+        fwrite(messages[i],sizeof(MESSAGE),1,tmpFile);
+        i++;
+    }
+    fclose(tmpFile);
+    i=0;
+
+    strcpy(buffer,"./");
+    strcat(buffer,messaging->name);
+    strcat(buffer,"_");
+    strcat(buffer,messaging->surname);
+    strcat(buffer,"/");
+    strcat(buffer,user->name);
+    strcat(buffer,"_");
+    strcat(buffer,user->surname);
+
+    tmpFile = fopen(buffer,"w+");
+    printf("MESAJ SILMEK ICIN ACILAN DOSYA ISMI: %s \n",buffer);
+
+    if(tmpFile == NULL){
+        printf("!!!!!!!!!!!!!Guncellenen MEsaj okuma durumlarini yazarken sorun yasandi \n");
+        return;
+    }
+
+    printf("!!!!!!!!!!!!!Guncellenen mesajlar tekrar yaziliyor \n");
+    while(j>i){
+        fwrite(messages[i],sizeof(MESSAGE),1,tmpFile);
+        free(messages[i]);
+        i++;
+    }
+
+    fclose(tmpFile);
+    free(messages);
 }
+
+void deleteMessage(void* args,USER* user, USER* messaging,char * message){
+    THREADARGS* threadArgs = (THREADARGS *)args;
+    
+    USER* userHead = threadArgs->userHead;
+    ACTIVEUSERS* actUserHead = threadArgs->active_users_head;
+    
+    int client_socket = threadArgs->socket;
+    int messaging_socket = threadArgs->messaging_socket;
+
+    char* messagingTo = threadArgs->meessaging_id;
+    char* myUserId = threadArgs->currentUserId;
+
+    char buffer[256];
+
+    FILE* tmpFile;
+
+    //* once senderin dosyasini acip mesaji silelim
+    //* sonra receiverin dosyasini acip mesaji silelim
+    //* bunun icin dosyadan okuyup linkli bir message dizisi olusturalim okunan mesaj silinmek istenen isle diziye eklemeyelim 
+    //* sonra elimizdeki dizinin tamamini yeni listeye ekleyelim
+
+    MESSAGE* messageTmp = (MESSAGE*) malloc(sizeof(MESSAGE));
+    MESSAGE** messages = (MESSAGE**) malloc(sizeof(MESSAGE*)*1000);
+    int i =0;
+    int j = 0;
+ 
+    strcpy(buffer,"./");
+    strcat(buffer,user->name);
+    strcat(buffer,"_");
+    strcat(buffer,user->surname);
+    strcat(buffer,"/");
+    strcat(buffer,messaging->name);
+    strcat(buffer,"_");
+    strcat(buffer,messaging->surname);
+
+    printf("MESAJ SILMEK ICIN ACILAN DOSYA ISMI: %s \n",buffer);
+    tmpFile = fopen(buffer,"r");
+
+    if(tmpFile == NULL){
+        printf("!!!!!!!!!!!!!Kullanicinin silmek istedigi mesajlar icin dosyayi okumak icin acma isleminde sorun yasandi \n");
+        return;
+    }
+    while(fread(messageTmp,sizeof(MESSAGE),1,tmpFile) == 1){
+        if(strncmp(messageTmp->message,message,strlen(messageTmp->message)) != 0){
+            printf("--------------------------------------------\n");
+            messages[i] = messageTmp;
+            messageTmp = (MESSAGE*) malloc(sizeof(MESSAGE));
+            i++;
+        }else{
+            printf("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$SILINECEK MESAJ BULUNDU$$$$$$$$$$$$$$$$$$$$$$$$\n");
+        }
+    }
+
+    fclose(tmpFile);
+    j = i;
+    i = 0;
+
+    tmpFile = fopen(buffer,"w+");
+    printf("MESAJ SILMEK ICIN ACILAN DOSYA ISMI: %s \n",buffer);
+    if(tmpFile == NULL){
+        printf("!!!!!!!!!!!!!Kullanicinin silmek istedigi dosyayi W modunda acmak isterken sorun yasandi \n");
+        return;
+    }
+
+    printf("!!!!!!!!!!!!!Silinen mesajlar haricindeki mesajlar tekrar dosyaya yaziliyor \n");
+    while(j>i){
+        fwrite(messages[i],sizeof(MESSAGE),1,tmpFile);
+        free(messages[i]);
+        i++;
+    }
+
+    fclose(tmpFile);
+
+    strcpy(buffer,"./");
+    strcat(buffer,messaging->name);
+    strcat(buffer,"_");
+    strcat(buffer,messaging->surname);
+    strcat(buffer,"/");
+    strcat(buffer,user->name);
+    strcat(buffer,"_");
+    strcat(buffer,user->surname);
+
+    i=0;
+
+    tmpFile = fopen(buffer,"w+");
+    if(tmpFile == NULL){
+        printf("!!!!!!!!!!!!!Kullanicinin silmek istedigi dosyayi W modunda acmak isterken sorun yasandi \n");
+        return;
+    }
+
+    printf("!!!!!!!!!!!!!Silinen mesajlar haricindeki mesajlar tekrar dosyaya yaziliyor \n");
+    while(i>0){
+        fwrite(messages[i-1],sizeof(MESSAGE),1,tmpFile);
+        free(messages[i-1]);
+        i--;
+    }
+
+    free(messages);
+}
+
+
 
 void saveMessagesToFile(void* args,USER* user,USER* messaging,MESSAGE* message){
     THREADARGS* threadArgs = (THREADARGS *)args;
@@ -490,7 +706,7 @@ void saveMessagesToFile(void* args,USER* user,USER* messaging,MESSAGE* message){
 
     tmpFile = fopen(buffer,"a+");
 
-    printf("MESSAGING FILE NAME IS: %s ++++++++++++++++++++++++?\n",buffer);
+    printf("MESSAGING DELETE FILE NAME IS: %s ++++++++++++++++++++++++?\n",buffer);
 
     if(tmpFile == NULL){
         printf("!!!!!!!!!!!!!Kullanicinin gondermek istedigi mesajlar icin dosya acma isleminde sorun yasandi \n");
@@ -930,12 +1146,6 @@ void *setAllUsersFromFile(char* fileName,USER* userHead){
 
 }
 
-
-int generate_unique_id() {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (int)tv.tv_sec;
-}
 
 
 USER* mallocUser(char* id, char* name, char* surname,char* phone){
