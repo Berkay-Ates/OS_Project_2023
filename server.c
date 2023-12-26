@@ -644,7 +644,6 @@ void deleteMessage(void* args,USER* user, USER* messaging,char * message){
     printf("!!!!!!!!!!!!!Silinen mesajlar haricindeki mesajlar tekrar dosyaya yaziliyor \n");
     while(j>i){
         fwrite(messages[i],sizeof(MESSAGE),1,tmpFile);
-        free(messages[i]);
         i++;
     }
 
@@ -668,11 +667,12 @@ void deleteMessage(void* args,USER* user, USER* messaging,char * message){
     }
 
     printf("!!!!!!!!!!!!!Silinen mesajlar haricindeki mesajlar tekrar dosyaya yaziliyor \n");
-    while(i>0){
-        fwrite(messages[i-1],sizeof(MESSAGE),1,tmpFile);
-        free(messages[i-1]);
-        i--;
+    while(j>i){
+        fwrite(messages[i],sizeof(MESSAGE),1,tmpFile);
+        free(messages[i]);
+        i++;
     }
+     fclose(tmpFile);
 
     free(messages);
 }
